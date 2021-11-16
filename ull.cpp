@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <algorithm>
 
 template<size_t dim>
 struct Particle
@@ -91,7 +92,13 @@ public:
     std::size_t total() const { return bucket_size * (bucket_idx) + curr; }
 
     auto begin() { return iterator{this}; }
+    const auto begin() const { return iterator{this}; }
     auto end()
+    {
+        auto it = iterator{this, bucket_idx, curr};
+        return it;
+    }
+    const auto end() const
     {
         auto it = iterator{this, bucket_idx, curr};
         return it;
@@ -127,10 +134,25 @@ struct Box
         , upper{upper_cell}
     {
     }
+    Box operator*(Box const& other) const
+    {
+        Box intersection{other};
+        for (auto idim = 0u; idim < dim; ++idim)
+        {
+            intersection.lower[idim] = std::max(lower[idim], other.lower[idim]);
+            intersection.upper[idim] = std::min(upper[idim], other.upper[idim]);
+            if (intersection.lower[idim] > intersection.upper[idim])
+                throw std::runtime_error("invalid intersection");
+        }
+        return intersection;
+    }
+
+
+
     class iterator
     {
     public:
-        iterator(Box* b, std::array<std::size_t, dim> index = std::array<std::size_t, dim>{})
+        iterator(Box const* b, std::array<std::size_t, dim> index = std::array<std::size_t, dim>{})
             : box_{b}
             , index_{index}
         {
@@ -153,6 +175,20 @@ struct Box
             }
             return *this;
         }
+        iterator operator++() const
+        {
+            index_[dim - 1]++;
+            for (auto idim = dim - 1; idim > 0; idim--)
+            {
+                if (index_[idim] == box_->upper[idim] + 1
+                    and index_[idim - 1] < box_->upper[idim - 1])
+                {
+                    index_[idim] = box_->lower[idim];
+                    index_[idim - 1]++;
+                }
+            }
+            return *this;
+        }
 
 
         bool operator!=(iterator const& other) const
@@ -162,12 +198,12 @@ struct Box
 
 
     private:
-        Box* box_;
+        Box const* box_;
         std::array<std::size_t, dim> index_;
     };
 
 
-    auto size() { return (upper[1] - lower[1] + 1) * (upper[0] - lower[0] + 1); }
+    auto size() const { return (upper[1] - lower[1] + 1) * (upper[0] - lower[0] + 1); }
     std::array<std::size_t, dim> shape() const
     {
         return {upper[0] - lower[0] + 1, upper[1] - lower[1] + 1};
@@ -175,6 +211,8 @@ struct Box
     auto begin() { return iterator{this, lower}; }
     auto end() { return iterator{this, {upper[0], upper[1] + 1}}; }
 
+    const auto begin() const { return iterator{this, lower}; }
+    const auto end() const { return iterator{this, {upper[0], upper[1] + 1}}; }
     std::array<std::size_t, dim> lower;
     std::array<std::size_t, dim> upper;
 };
@@ -182,7 +220,7 @@ struct Box
 
 
 
-template<std::size_t dim, typename T>
+template<std::size_t dim, typename T, std::size_t bucket_size>
 class grid
 {
 public:
@@ -212,20 +250,20 @@ public:
     }
 
 
-    auto select(std::vector<Particle<dim>>& particles, Box<dim>& box)
+    auto select(std::vector<Particle<dim>>& particles, Box<dim> const& box) const
     {
         // count all particles
         std::size_t nbrTot = 0;
-        for (auto c : box)
+        for (auto const& c : box)
         {
             auto cc = cell(c);
             nbrTot += cc.total();
         }
-
+        std::cout << "select found " << nbrTot << "\n";
         std::vector<Particle<dim>> selection(nbrTot);
 
         std::size_t ipart = 0;
-        for (auto c : box)
+        for (auto const& c : box)
         {
             auto plist = cell(c);
             for (Particle<dim> const* p : plist)
@@ -237,13 +275,24 @@ public:
     }
 
 
-    ull<200, T>& cell(std::size_t ix, std::size_t iy)
+    ull<bucket_size, T>& cell(std::size_t ix, std::size_t iy)
+    {
+        auto& c = ulls_[iy + ix * ny_];
+        return c;
+    }
+    ull<bucket_size, T> const& cell(std::size_t ix, std::size_t iy) const
     {
         auto& c = ulls_[iy + ix * ny_];
         return c;
     }
 
-    ull<200, T>& cell(std::array<std::size_t, dim> cell)
+    ull<bucket_size, T>& cell(std::array<std::size_t, dim> cell)
+    {
+        auto& c = ulls_[cell[1] + cell[0] * ny_];
+        return c;
+    }
+
+    ull<bucket_size, T> const& cell(std::array<std::size_t, dim> cell) const
     {
         auto& c = ulls_[cell[1] + cell[0] * ny_];
         return c;
@@ -262,7 +311,7 @@ public:
 
 private:
     std::size_t nx_, ny_;
-    std::vector<ull<200, T>> ulls_;
+    std::vector<ull<bucket_size, T>> ulls_;
 };
 
 
@@ -289,16 +338,16 @@ auto make_particles_in(Box<dim> box, std::size_t nppc)
     return particles;
 }
 
-
-int main()
-{ //
+void test()
+{
+    //
     constexpr auto dim = 2u;
     Box<dim> domain{{0, 0}, {9, 19}};
     std::size_t nppc = 4;
-    auto particles   = make_particles_in(domain, 4u);
+    auto particles   = make_particles_in(domain, nppc);
 
     std::cout << "making the grid...\n";
-    grid<dim, Particle<dim>> myGrid(domain.shape());
+    grid<dim, Particle<dim>, 200> myGrid(domain.shape());
 
     std::cout << "pushing...\n";
     // pretend pushing
@@ -355,7 +404,61 @@ int main()
     std::cout << "nbr of particles expected : " << selection_box.size() * nppc << "\n";
     if (selected.size() != selection_box.size() * nppc)
         throw std::runtime_error("invalid number of found particles");
+}
 
+template<std::size_t dim>
+auto box_generator(Box<dim> const& domain, std::size_t lower_size, std::size_t upper_size,
+                   std::size_t nbr_boxes)
+{
+    std::vector<Box<dim>> boxes;
+    boxes.reserve(nbr_boxes);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> size_dist(lower_size, upper_size);
+    std::array<std::uniform_int_distribution<std::size_t>, dim> pos_dist;
+    for (auto idim = 0u; idim < dim; ++idim)
+        pos_dist[idim]
+            = std::uniform_int_distribution<std::size_t>(domain.lower[idim], domain.upper[idim]);
+
+    for (auto ibox = 0; ibox < nbr_boxes; ++ibox)
+    {
+        auto size = size_dist(gen);
+        auto ipos = pos_dist[0](gen);
+        auto jpos = pos_dist[1](gen);
+        boxes.push_back(Box<dim>{{ipos, jpos}, {ipos + size - 1, jpos + size - 1}});
+    }
+    return boxes;
+}
+
+
+int main()
+{
+    test();
+    constexpr auto dim = 2u;
+    Box<dim> domain{{0, 0}, {199, 399}};
+    std::size_t nppc = 100;
+    auto particles   = make_particles_in(domain, nppc);
+
+    grid<dim, Particle<dim>, 200> myGrid(domain.shape());
+    for (auto ip = 0; ip < nppc * domain.size(); ++ip)
+    {
+        myGrid.addToCell(particles[ip].iCell, particles[ip]);
+    }
+
+    auto boxes = box_generator(domain, 5, 10, 10);
+
+    for (auto const& box : boxes)
+    {
+        std::cout << "searching particles in [(" << box.lower[0] << "," << box.lower[1] << "),("
+                  << box.upper[0] << "," << box.upper[1] << ")]\n";
+        auto intersection = domain * box;
+        std::cout << "intersection is [(" << intersection.lower[0] << "," << intersection.lower[1]
+                  << "),(" << intersection.upper[0] << "," << intersection.upper[1] << ")]\n";
+        std::cout << "expecting " << intersection.size() * nppc << " particles\n";
+        auto found = myGrid.select(particles, intersection);
+        std::cout << "found " << found.size() << " particles\n";
+    }
     return 0;
 }
 
