@@ -1,4 +1,4 @@
-
+#include <chrono>
 #include <array>
 #include <cstddef>
 #include <random>
@@ -432,6 +432,43 @@ auto box_generator(Box<dim> const& domain, std::size_t lower_size, std::size_t u
 }
 
 
+
+template<std::size_t dim>
+inline bool isInBox(Box<dim> const& box, Particle<dim> const& particle)
+{
+    auto const& iCell = particle.iCell;
+
+    auto const& lower = box.lower;
+    auto const& upper = box.upper;
+
+
+    if (iCell[0] >= lower[0] && iCell[0] <= upper[0])
+    {
+        if constexpr (dim > 1)
+        {
+            if (iCell[1] >= lower[1] && iCell[1] <= upper[1])
+            {
+                if constexpr (dim > 2)
+                {
+                    if (iCell[2] >= lower[2] && iCell[2] <= upper[2])
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    return true;
+                }
+            }
+        }
+        else
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 int main()
 {
     test();
@@ -459,6 +496,49 @@ int main()
         auto found = myGrid.select(particles, intersection);
         std::cout << "found " << found.size() << " particles\n";
     }
+
+    std::chrono::high_resolution_clock::time_point t1;
+    t1 = std::chrono::high_resolution_clock::now();
+    for (auto const& box : boxes)
+    {
+        auto intersection = domain * box;
+        auto found        = myGrid.select(particles, intersection);
+    }
+    std::chrono::high_resolution_clock::time_point t2;
+    t2            = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    std::cout << "first method : " << duration << "ms\n";
+
+    t1 = std::chrono::high_resolution_clock::now();
+    std::vector<Particle<dim>> selected;
+    for (auto const& box : boxes)
+    {
+        auto count = 0u;
+        for (auto const& p : particles)
+        {
+            auto intersection = domain * box;
+            if (isInBox(intersection, p))
+            {
+                count++;
+            }
+        }
+        selected.resize(count);
+        auto ip = 0u;
+        for (auto const& p : particles)
+        {
+            auto intersection = domain * box;
+            if (isInBox(intersection, p))
+            {
+                selected[ip++] = p;
+            }
+        }
+    }
+    t2       = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    std::cout << "second method : " << duration << "ms\n";
+
+
+
     return 0;
 }
 
