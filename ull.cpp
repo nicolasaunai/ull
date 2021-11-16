@@ -183,30 +183,30 @@ public:
     }
 
 
-    auto select(std::vector<Particle<dim>> const& particles, Box<dim> const& box)
+    auto select(std::vector<Particle<dim>>& particles, Box<dim>& box)
     {
         // count all particles
         std::size_t nbrTot = 0;
-        for (auto ix = box.lower[0]; ix <= box.upper[0]; ++ix)
+        for (auto c : box)
         {
-            for (auto iy = box.lower[1]; iy <= box.upper[1]; ++iy)
-            {
-                nbrTot += total(ix, iy);
-            }
+            std::cout << "looking in cell : " << c[0] << " " << c[1] << "\n";
+            auto cc = cell(c);
+            nbrTot += cc.total();
         }
 
+        std::cout << nbrTot << " particle found\n";
         std::vector<Particle<dim>> selection(nbrTot);
 
-        for (auto ix = box.lower[0]; ix <= box.upper[0]; ++ix)
+        std::size_t ipart = 0;
+        for (auto c : box)
         {
-            for (auto iy = box.lower[1]; iy <= box.upper[1]; ++iy)
+            auto plist = cell(c);
+            for (Particle<dim> const* p : plist)
             {
-                for (auto const* p : ulls_[iy + ix * ny_])
-                {
-                    // selection[ip++] = *p;
-                }
+                selection[ipart++] = *p;
             }
         }
+        return selection;
     }
 
 
@@ -281,6 +281,7 @@ int main()
     auto& cell  = myGrid.cell(10, 12);
     auto it_beg = cell.begin();
     auto it_end = cell.end();
+    std::cout << "particle in cell 10,12 : " << (*it_beg)->iCell[0] << "\n";
 
     Box<dim> selection_box;
     selection_box.lower[0] = 20;
@@ -305,14 +306,23 @@ int main()
         }
     }
     Box<dim> selection_box2;
-    selection_box.lower[0] = 20;
-    selection_box.lower[1] = 15;
-    selection_box.upper[0] = 38;
-    selection_box.upper[1] = 44;
-    std::cout << "particle in cell 10,12 : " << (*it_beg)->iCell[0] << "\n";
+    selection_box2.lower[0] = 20;
+    selection_box2.lower[1] = 15;
+    selection_box2.upper[0] = 38;
+    selection_box2.upper[1] = 44;
+    std::cout << "cells in box : [(" << selection_box2.lower[0] << "," << selection_box2.lower[1]
+              << "),(" << selection_box2.upper[0] << "," << selection_box2.upper[1] << ")]"
+              << "\n";
+    for (auto c : selection_box2)
+    {
+        std::cout << " " << c[0] << " " << c[1] << "\n";
+    }
 
 
-
+    std::cout << "selecting particle...\n";
+    auto selected = myGrid.select(particles, selection_box2);
+    std::cout << "nbr of particles selected : " << selected.size() << "\n";
+    std::cout << "nbr of particles expected : " << (38 - 20 + 1) * (44 - 15 + 1) * nppc << "\n";
 
     return 0;
 }
