@@ -128,9 +128,10 @@ struct Box
             index_[dim - 1]++;
             for (auto idim = dim - 1; idim > 0; idim--)
             {
-                if (index_[idim] == box_->upper[idim] and index_[idim - 1] != box_->upper[idim - 1])
+                if (index_[idim] == box_->upper[idim] + 1
+                    and index_[idim - 1] < box_->upper[idim - 1])
                 {
-                    index_[idim] = 0;
+                    index_[idim] = box_->lower[idim];
                     index_[idim - 1]++;
                 }
             }
@@ -150,8 +151,9 @@ struct Box
     };
 
 
+    auto size() { return (upper[1] - lower[1] + 1) * (upper[0] - lower[0] + 1); }
     auto begin() { return iterator{this, lower}; }
-    auto end() { return iterator{this, upper}; }
+    auto end() { return iterator{this, {upper[0], upper[1] + 1}}; }
 
     std::array<std::size_t, dim> lower;
     std::array<std::size_t, dim> upper;
@@ -189,12 +191,10 @@ public:
         std::size_t nbrTot = 0;
         for (auto c : box)
         {
-            std::cout << "looking in cell : " << c[0] << " " << c[1] << "\n";
             auto cc = cell(c);
             nbrTot += cc.total();
         }
 
-        std::cout << nbrTot << " particle found\n";
         std::vector<Particle<dim>> selection(nbrTot);
 
         std::size_t ipart = 0;
@@ -232,7 +232,7 @@ private:
 
 int main()
 { //
-    std::size_t nx = 100, ny = 150;
+    std::size_t nx = 10, ny = 20;
     std::size_t nppc   = 4;
     constexpr auto dim = 2u;
     std::vector<Particle<dim>> particles;
@@ -271,23 +271,23 @@ int main()
         {
             if (myGrid.total(ix, iy) != nppc)
             {
-                std::runtime_error("invalid number of particles in cell ");
+                throw std::runtime_error("invalid number of particles in cell ");
             }
         }
     }
     std::cout << "nbr of particles ok.\n";
 
 
-    auto& cell  = myGrid.cell(10, 12);
+    auto& cell  = myGrid.cell(2, 1);
     auto it_beg = cell.begin();
     auto it_end = cell.end();
     std::cout << "particle in cell 10,12 : " << (*it_beg)->iCell[0] << "\n";
 
     Box<dim> selection_box;
-    selection_box.lower[0] = 20;
-    selection_box.lower[1] = 15;
-    selection_box.upper[0] = 22;
-    selection_box.upper[1] = 17;
+    selection_box.lower[0] = 4;
+    selection_box.lower[1] = 3;
+    selection_box.upper[0] = 6;
+    selection_box.upper[1] = 4;
     std::cout << "cells in box : [(" << selection_box.lower[0] << "," << selection_box.lower[1]
               << "),(" << selection_box.upper[0] << "," << selection_box.upper[1] << ")]"
               << "\n";
@@ -305,24 +305,13 @@ int main()
             std::cout << "particle : " << p->iCell[0] << ", " << p->iCell[1] << "\n";
         }
     }
-    Box<dim> selection_box2;
-    selection_box2.lower[0] = 20;
-    selection_box2.lower[1] = 15;
-    selection_box2.upper[0] = 38;
-    selection_box2.upper[1] = 44;
-    std::cout << "cells in box : [(" << selection_box2.lower[0] << "," << selection_box2.lower[1]
-              << "),(" << selection_box2.upper[0] << "," << selection_box2.upper[1] << ")]"
-              << "\n";
-    for (auto c : selection_box2)
-    {
-        std::cout << " " << c[0] << " " << c[1] << "\n";
-    }
-
 
     std::cout << "selecting particle...\n";
-    auto selected = myGrid.select(particles, selection_box2);
+    auto selected = myGrid.select(particles, selection_box);
     std::cout << "nbr of particles selected : " << selected.size() << "\n";
-    std::cout << "nbr of particles expected : " << (38 - 20 + 1) * (44 - 15 + 1) * nppc << "\n";
+    std::cout << "nbr of particles expected : " << selection_box.size() * nppc << "\n";
+    if (selected.size() != selection_box.size() * nppc)
+        throw std::runtime_error("invalid number of found particles");
 
     return 0;
 }
