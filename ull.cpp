@@ -98,6 +98,16 @@ public:
     }
 
 
+    void empty()
+    {
+        bucket_idx = 0;
+        curr       = 0;
+    }
+
+    bool is_empty() const { return bucket_idx == 0 and curr == 0; }
+
+    std::size_t capacity() const { return buckets_.size() * bucket_size; }
+
 
 private:
     using bucket           = std::array<const T*, bucket_size>;
@@ -239,6 +249,17 @@ public:
         return c;
     }
 
+
+    auto capacity()
+    {
+        auto tot = 0u;
+        for (auto const& ull : ulls_)
+        {
+            tot += ull.capacity();
+        }
+        return tot;
+    }
+
 private:
     std::size_t nx_, ny_;
     std::vector<ull<200, T>> ulls_;
@@ -285,6 +306,8 @@ int main()
     {
         myGrid.addToCell(particles[ip].iCell, particles[ip]);
     }
+
+    std::cout << "total grid capacity : " << myGrid.capacity() << "\n";
 
 
     std::cout << "testing nbr of particles per cell registered\n";
