@@ -1,6 +1,8 @@
 #include <chrono>
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <numeric>
 #include <random>
 #include <iostream>
 #include <stdexcept>
@@ -54,129 +56,6 @@ private:
 };
 
 
-
-
-template<std::size_t bucket_size, typename T>
-class ull
-{
-    class iterator : public std::iterator<std::forward_iterator_tag, T>
-    {
-    public:
-        iterator(ull* u, std::size_t curr_bucket = 0, std::size_t curr_pos = 0)
-            : curr_bucket_{curr_bucket}
-            , curr_pos_{curr_pos}
-            , ull_{u}
-        {
-        }
-
-    public:
-        const T* operator*()
-        {
-            // std::cout << curr_bucket_ << " " << curr_pos_ << "\n";
-            return ull_->buckets_[curr_bucket_][curr_pos_];
-        }
-
-        iterator operator++()
-        {
-            curr_pos_++;
-            if (curr_pos_ == bucket_size)
-            {
-                curr_bucket_++;
-                curr_pos_ = 0;
-            }
-            // std::cout << "++ : " << curr_bucket_ << " " << curr_pos_ << "\n";
-            return *this;
-        }
-
-
-        bool operator!=(iterator const& other) const
-        {
-            return (other.curr_bucket_ != curr_bucket_ or other.curr_pos_ != curr_pos_)
-                   or ull_ != other.ull_;
-        }
-
-
-    private:
-        std::size_t curr_bucket_ = 0, curr_pos_ = 0;
-        ull<bucket_size, T>* ull_;
-    };
-
-public:
-    ull()
-        : buckets_(1)
-    {
-    }
-
-    void add(T const& t)
-    {
-        if (curr != bucket_size)
-        {
-            // std::cout << "adding..." << bucket_idx << " " << curr << "\n";
-            buckets_[bucket_idx][curr++] = &t;
-        }
-        else
-        {
-            buckets_.push_back(bucket{});
-            bucket_idx++;
-            curr = 0;
-            add(t);
-            // std::cout << "buckets" << buckets_.size() << " " << buckets_.capacity() << "\n";
-        }
-    }
-
-    std::size_t total() const { return bucket_size * (bucket_idx) + curr; }
-
-    auto begin() { return iterator{this}; }
-    const auto begin() const { return iterator{this}; }
-    auto end()
-    {
-        if (curr != bucket_size)
-        {
-            auto it = iterator{this, bucket_idx, curr};
-            return it;
-        }
-        else
-        {
-            auto it = iterator{this, bucket_idx + 1, 0};
-            return it;
-        }
-    }
-    const auto end() const
-    {
-        if (curr != bucket_size)
-        {
-            auto it = iterator{this, bucket_idx, curr};
-            return it;
-        }
-        else
-        {
-            auto it = iterator{this, bucket_idx + 1, 0};
-            return it;
-        }
-    }
-
-
-    void empty()
-    {
-        bucket_idx = 0;
-        curr       = 0;
-    }
-
-    bool is_empty() const { return bucket_idx == 0 and curr == 0; }
-
-    std::size_t capacity() const { return buckets_.size() * bucket_size; }
-
-
-private:
-    using bucket           = std::array<const T*, bucket_size>;
-    std::size_t bucket_idx = 0;
-    std::size_t curr       = 0;
-    std::vector<bucket> buckets_;
-};
-
-
-
-
 template<std::size_t dim>
 struct Box
 {
@@ -203,8 +82,9 @@ struct Box
     class iterator
     {
     public:
-        iterator(Box const* b, std::array<std::size_t, dim> index = std::array<std::size_t, dim>{})
-            : box_{b}
+        iterator(Box const* box,
+                 std::array<std::size_t, dim> index = std::array<std::size_t, dim>{})
+            : box_{box}
             , index_{index}
         {
         }
@@ -214,9 +94,25 @@ struct Box
 
         iterator operator++()
         {
+            // this ++ operator assumes C ordering
+            // this means that incrementing
+            // cell at (i,j,k) will go to cell
+            // (i,j,k+1).
+            // so the first thing we need to do
+            // is incrementing the last dimension index
             index_[dim - 1]++;
+
+            // then it is possible that this increment has
+            // made the index k reaching last index+1
+            // if it is the case, we need to reset it to
+            // the lower cell of the box in that direction
+            // and increment j. This is only done if j itself
+            // has not reached the last index
+            // if j reaches last+1, then set it to lower j
+            // and increment i.
             for (auto idim = dim - 1; idim > 0; idim--)
             {
+                // note : be sure this works in 3D too...
                 if (index_[idim] == box_->upper[idim] + 1
                     and index_[idim - 1] < box_->upper[idim - 1])
                 {
@@ -260,8 +156,12 @@ struct Box
         return {upper[0] - lower[0] + 1, upper[1] - lower[1] + 1};
     }
     auto begin() { return iterator{this, lower}; }
-    auto end() { return iterator{this, {upper[0], upper[1] + 1}}; }
 
+    // since the 1D scan of the multidimensional box is done assuming C ordering
+    // the end (in the sens of container.end()) is one beyond last for the last
+    // direction only, previous dimensions have not reached the end.
+    // Note : make sure this still is true in 3D
+    auto end() { return iterator{this, {upper[0], upper[1] + 1}}; }
     const auto begin() const { return iterator{this, lower}; }
     const auto end() const { return iterator{this, {upper[0], upper[1] + 1}}; }
     std::array<std::size_t, dim> lower;
@@ -269,29 +169,186 @@ struct Box
 };
 
 
+template<std::size_t bucket_size, typename T>
+class BucketList
+{
+    class iterator : public std::iterator<std::forward_iterator_tag, T>
+    {
+    public:
+        iterator(BucketList* u, std::size_t curr_bucket = 0, std::size_t curr_pos = 0)
+            : curr_bucket_{curr_bucket}
+            , curr_pos_{curr_pos}
+            , bucketsList_{u}
+        {
+        }
+
+    public:
+        const T* operator*()
+        {
+            // std::cout << curr_bucket_ << " " << curr_pos_ << "\n";
+            return bucketsList_->buckets_[curr_bucket_][curr_pos_];
+        }
+
+        iterator operator++()
+        {
+            curr_pos_++;
+            if (curr_pos_ == bucket_size)
+            {
+                curr_bucket_++;
+                curr_pos_ = 0;
+            }
+            // std::cout << "++ : " << curr_bucket_ << " " << curr_pos_ << "\n";
+            return *this;
+        }
+
+
+        bool operator!=(iterator const& other) const
+        {
+            return (other.curr_bucket_ != curr_bucket_ or other.curr_pos_ != curr_pos_)
+                   or bucketsList_ != other.bucketsList_;
+        }
+
+
+    private:
+        std::size_t curr_bucket_ = 0, curr_pos_ = 0;
+        BucketList<bucket_size, T>* bucketsList_;
+    };
+
+public:
+    BucketList()
+        : buckets_(1)
+    {
+    }
+
+    void add(T const& t)
+    {
+        if (curr != bucket_size)
+        {
+            // std::cout << "adding..." << bucket_idx << " " << curr << "\n";
+            buckets_[bucket_idx][curr++] = &t;
+        }
+        else
+        {
+            buckets_.push_back(bucket_t{});
+            bucket_idx++;
+            curr = 0;
+            add(t);
+            // std::cout << "buckets" << buckets_.size() << " " << buckets_.capacity() << "\n";
+        }
+    }
+
+
+    auto begin() { return iterator{this}; }
+    const auto begin() const { return iterator{this}; }
+    auto end()
+    {
+        // if the current cursor position is equal to bucket_size
+        // it means we really are positioned on the next
+        // bucket at cursor 0
+        if (curr != bucket_size)
+        {
+            auto it = iterator{this, bucket_idx, curr};
+            return it;
+        }
+        else
+        {
+            auto it = iterator{this, bucket_idx + 1, 0};
+            return it;
+        }
+    }
+    const auto end() const
+    {
+        if (curr != bucket_size)
+        {
+            auto it = iterator{this, bucket_idx, curr};
+            return it;
+        }
+        else
+        {
+            auto it = iterator{this, bucket_idx + 1, 0};
+            return it;
+        }
+    }
+
+    std::size_t total() const { return bucket_size * (bucket_idx) + curr; }
+
+    void empty()
+    {
+        bucket_idx = 0;
+        curr       = 0;
+    }
+
+    bool is_empty() const { return bucket_idx == 0 and curr == 0; }
+
+    std::size_t capacity() const { return buckets_.size() * bucket_size; }
+
+    void trim(std::size_t min_empty)
+    {
+        auto nbr_elem         = total();
+        auto nbr_full_buckets = nbr_elem / bucket_size;
+        auto nbr_buckets      = buckets_.size();
+
+        // curr!=0 means the current bucket should not be counted as empty
+        auto curr_empty = nbr_buckets - nbr_full_buckets - ((curr == 0) ? 0 : 1);
+        if (curr_empty < min_empty)
+        {
+            auto to_remove = curr_empty - min_empty;
+            buckets_.resize(buckets_.size() - to_remove);
+        }
+    }
+
+
+private:
+    using bucket_t         = std::array<const T*, bucket_size>;
+    std::size_t bucket_idx = 0;
+    std::size_t curr       = 0;
+    std::vector<bucket_t> buckets_;
+};
+
+
 
 
 template<std::size_t dim, typename T, std::size_t bucket_size>
-class grid
+class CellMap
 {
+private:
+    template<typename integer>
+    auto flatten_(std::array<integer, dim> const& cell) const
+    {
+        if constexpr (dim == 1)
+            return cell[0];
+        else if constexpr (dim == 2)
+        {
+            return cell[1] + cell[0] * shape_[1];
+        }
+        else if constexpr (dim == 3)
+        {
+            return cell[2] + cell[1] * shape_[2] + cell[0] * shape_[1] * shape_[2];
+        }
+    }
+
 public:
-    grid(std::size_t nx, std::size_t ny)
-        : nx_{ny}
-        , ny_{ny}
+    CellMap(std::size_t nx, std::size_t ny)
+        : shape_{{nx, ny}}
     {
-        ulls_.resize(nx_ * ny_);
+        bucketsLists_.resize(nx * ny);
     }
 
-    grid(std::array<std::size_t, dim> shape)
-        : nx_{shape[0]}
-        , ny_{shape[1]}
+    CellMap(std::array<std::size_t, dim> shape)
+        : shape_{shape}
     {
-        ulls_.resize(nx_ * ny_);
+        bucketsLists_.resize(std::accumulate(std::begin(shape_), std::end(shape_), 1u,
+                                             std::multiplies<std::size_t>{}));
     }
 
-    void addToCell(std::array<int, dim> cell, T const& obj)
+
+    auto nbr_cells() const { return bucketsLists_.size(); }
+
+
+    template<typename integer>
+    void addToCell(std::array<integer, dim> const& cell, T const& obj)
     {
-        ulls_[cell[1] + ny_ * cell[0]].add(obj);
+        bucketsLists_[flatten_(cell)].add(obj);
     }
 
 
@@ -306,8 +363,7 @@ public:
 
     std::size_t total(std::size_t ix, std::size_t iy)
     {
-        auto icell = iy + ix * ny_;
-        return ulls_[icell].total();
+        return bucketsLists_[flatten_(std::array<std::size_t, 2>{ix, iy})].total();
     }
 
 
@@ -317,7 +373,7 @@ public:
         std::size_t nbrTot = 0;
         for (auto const& c : box)
         {
-            auto cc = cell(c);
+            auto cc = list_at(c);
             nbrTot += cc.total();
         }
         std::vector<Particle<dim>> selection(nbrTot);
@@ -325,7 +381,7 @@ public:
         std::size_t ipart = 0;
         for (auto const& c : box)
         {
-            auto plist = cell(c);
+            auto plist = list_at(c);
             for (Particle<dim> const* p : plist)
             {
                 selection[ipart++] = *p;
@@ -335,26 +391,26 @@ public:
     }
 
 
-    ull<bucket_size, T>& cell(std::size_t ix, std::size_t iy)
+    BucketList<bucket_size, T>& list_at(std::size_t ix, std::size_t iy)
     {
-        auto& c = ulls_[iy + ix * ny_];
+        auto& c = bucketsLists_[flatten_(std::array<std::size_t, 2>{ix, iy})];
         return c;
     }
-    ull<bucket_size, T> const& cell(std::size_t ix, std::size_t iy) const
+    BucketList<bucket_size, T> const& list_at(std::size_t ix, std::size_t iy) const
     {
-        auto& c = ulls_[iy + ix * ny_];
-        return c;
-    }
-
-    ull<bucket_size, T>& cell(std::array<std::size_t, dim> cell)
-    {
-        auto& c = ulls_[cell[1] + cell[0] * ny_];
+        auto& c = bucketsLists_[flatten_(std::array<std::size_t, 2>{ix, iy})];
         return c;
     }
 
-    ull<bucket_size, T> const& cell(std::array<std::size_t, dim> cell) const
+    BucketList<bucket_size, T>& list_at(std::array<std::size_t, dim> cell)
     {
-        auto& c = ulls_[cell[1] + cell[0] * ny_];
+        auto& c = bucketsLists_[flatten_(cell)];
+        return c;
+    }
+
+    BucketList<bucket_size, T> const& list_at(std::array<std::size_t, dim> cell) const
+    {
+        auto& c = bucketsLists_[flatten_(cell)];
         return c;
     }
 
@@ -362,9 +418,9 @@ public:
     auto capacity() const
     {
         auto tot = 0u;
-        for (auto const& ull : ulls_)
+        for (auto const& bucketList : bucketsLists_)
         {
-            tot += ull.capacity();
+            tot += bucketList.capacity();
         }
         return tot;
     }
@@ -372,9 +428,9 @@ public:
 
     void reset()
     {
-        for (auto& ull : ulls_)
+        for (auto& bucketList : bucketsLists_)
         {
-            ull.empty();
+            bucketList.empty();
         }
     }
 
@@ -382,8 +438,8 @@ public:
 
 
 private:
-    std::size_t nx_, ny_;
-    std::vector<ull<bucket_size, T>> ulls_;
+    std::array<std::size_t, dim> shape_;
+    std::vector<BucketList<bucket_size, T>> bucketsLists_;
 };
 
 
@@ -410,6 +466,9 @@ auto make_particles_in(Box<dim> box, std::size_t nppc)
     return particles;
 }
 
+
+
+
 void test()
 {
     //
@@ -419,17 +478,13 @@ void test()
     std::size_t nppc = 4;
     auto particles   = make_particles_in(domain, nppc);
 
-    std::cout << "making the grid...\n";
-    grid<dim, Particle<dim>, 200> myGrid(domain.shape());
+    std::cout << "making the CellMap...\n";
+    CellMap<dim, Particle<dim>, 200> myGrid(domain.shape());
 
     std::cout << "pushing...\n";
-    // pretend pushing
-    for (auto ip = 0; ip < nppc * domain.size(); ++ip)
-    {
-        myGrid.addToCell(particles[ip].iCell, particles[ip]);
-    }
+    myGrid.add(particles);
 
-    std::cout << "total grid capacity : " << myGrid.capacity() << "\n";
+    std::cout << "total CellMap capacity : " << myGrid.capacity() << "\n";
 
 
     std::cout << "testing nbr of particles per cell registered\n";
@@ -447,9 +502,9 @@ void test()
     std::cout << "nbr of particles ok.\n";
 
 
-    auto& cell  = myGrid.cell(2, 1);
-    auto it_beg = cell.begin();
-    auto it_end = cell.end();
+    auto& mlist = myGrid.list_at(2, 1);
+    auto it_beg = mlist.begin();
+    auto it_end = mlist.end();
     std::cout << "particle in cell 10,12 : " << (*it_beg)->iCell[0] << "\n";
 
     Box<dim> selection_box({4, 3}, {6, 4});
@@ -463,7 +518,7 @@ void test()
     std::cout << "now listing particles for each cell\n";
     for (auto const& c : selection_box)
     {
-        auto plist = myGrid.cell(c);
+        auto plist = myGrid.list_at(c);
         std::cout << "cell : " << c[0] << " " << c[1] << "\n";
         for (Particle<dim> const* p : plist)
         {
@@ -561,7 +616,7 @@ int main()
     std::vector<std::size_t> m2times(nppcs.size());
     std::generate(std::begin(nppcs), std::end(nppcs), []() {
         static std::size_t nppc = 1;
-        return nppc++;
+        return nppc += 1;
     });
 
 
@@ -571,7 +626,7 @@ int main()
     {
         std::cout << nppc << " particles per cell\n";
         auto particles = make_particles_in(domain, nppc);
-        grid<dim, Particle<dim>, bucket_size> myGrid(domain.shape());
+        CellMap<dim, Particle<dim>, bucket_size> myGrid(domain.shape());
         {
             auto _ = Timer(*(m1time));
             myGrid.add(particles);
