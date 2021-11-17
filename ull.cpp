@@ -120,6 +120,7 @@ public:
             bucket_idx++;
             curr = 0;
             add(t);
+            std::cout << "buckets" << buckets_.size() << " " << buckets_.capacity() << "\n";
         }
     }
 
@@ -547,11 +548,10 @@ int main()
 {
     test();
     constexpr auto dim = 2u;
-    Box<dim> domain{{0, 0}, {199, 399}};
+    Box<dim> domain{{0, 0}, {30, 40}};
     std::size_t nppc = 100;
 
-    auto constexpr bucket_size = 40u;
-    grid<dim, Particle<dim>, bucket_size> myGrid(domain.shape());
+    auto constexpr bucket_size = 64u;
 
     auto boxes = box_generator(domain, 5, 10, 10);
 
@@ -571,7 +571,7 @@ int main()
     {
         std::cout << nppc << " particles per cell\n";
         auto particles = make_particles_in(domain, nppc);
-        myGrid.reset();
+        grid<dim, Particle<dim>, bucket_size> myGrid(domain.shape());
         {
             auto _ = Timer(*(m1time));
             myGrid.add(particles);
