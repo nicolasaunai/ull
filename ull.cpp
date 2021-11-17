@@ -70,7 +70,11 @@ class ull
         }
 
     public:
-        const T* operator*() { return ull_->buckets_[curr_bucket_][curr_pos_]; }
+        const T* operator*()
+        {
+            // std::cout << curr_bucket_ << " " << curr_pos_ << "\n";
+            return ull_->buckets_[curr_bucket_][curr_pos_];
+        }
 
         iterator operator++()
         {
@@ -107,6 +111,7 @@ public:
     {
         if (curr != bucket_size)
         {
+            // std::cout << "adding..." << bucket_idx << " " << curr << "\n";
             buckets_[bucket_idx][curr++] = &t;
         }
         else
@@ -124,13 +129,29 @@ public:
     const auto begin() const { return iterator{this}; }
     auto end()
     {
-        auto it = iterator{this, bucket_idx, curr};
-        return it;
+        if (curr != bucket_size)
+        {
+            auto it = iterator{this, bucket_idx, curr};
+            return it;
+        }
+        else
+        {
+            auto it = iterator{this, bucket_idx + 1, 0};
+            return it;
+        }
     }
     const auto end() const
     {
-        auto it = iterator{this, bucket_idx, curr};
-        return it;
+        if (curr != bucket_size)
+        {
+            auto it = iterator{this, bucket_idx, curr};
+            return it;
+        }
+        else
+        {
+            auto it = iterator{this, bucket_idx + 1, 0};
+            return it;
+        }
     }
 
 
@@ -529,7 +550,8 @@ int main()
     Box<dim> domain{{0, 0}, {199, 399}};
     std::size_t nppc = 100;
 
-    grid<dim, Particle<dim>, 200> myGrid(domain.shape());
+    auto constexpr bucket_size = 40u;
+    grid<dim, Particle<dim>, bucket_size> myGrid(domain.shape());
 
     auto boxes = box_generator(domain, 5, 10, 10);
 
@@ -589,7 +611,7 @@ int main()
 
     std::cout << "saving results....\n";
     std::ofstream output;
-    output.open("test.txt");
+    output.open("test_" + std::to_string(bucket_size) + ".txt");
     for (auto i = 0u; i < nppcs.size(); ++i)
     {
         output << nppcs[i] << " " << m1times[i] << " " << m2times[i] << "\n";
