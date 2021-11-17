@@ -526,9 +526,9 @@ int main()
         auto found        = myGrid.select(particles, intersection);
     }
     std::chrono::high_resolution_clock::time_point t2;
-    t2            = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    std::cout << "first method : " << duration << "us\n";
+    t2             = std::chrono::high_resolution_clock::now();
+    auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    std::cout << "first method : " << duration1 << "us\n";
 
     t1 = std::chrono::high_resolution_clock::now();
     std::vector<Particle<dim>> selected;
@@ -554,9 +554,10 @@ int main()
             }
         }
     }
-    t2       = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    std::cout << "second method : " << duration << "us\n";
+    t2             = std::chrono::high_resolution_clock::now();
+    auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+    std::cout << "second method : " << duration2 << "us\n";
+    std::cout << "method1/method2 " << static_cast<float>(duration1) / duration2 << "\n";
 
 
 
