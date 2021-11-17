@@ -299,7 +299,7 @@ public:
     }
 
 
-    auto capacity()
+    auto capacity() const
     {
         auto tot = 0u;
         for (auto const& ull : ulls_)
@@ -307,6 +307,15 @@ public:
             tot += ull.capacity();
         }
         return tot;
+    }
+
+
+    void reset()
+    {
+        for (auto& ull : ulls_)
+        {
+            ull.empty();
+        }
     }
 
 private:
@@ -497,8 +506,14 @@ int main()
         std::cout << "found " << found.size() << " particles\n";
     }
 
+    myGrid.reset();
     std::chrono::high_resolution_clock::time_point t1;
+
     t1 = std::chrono::high_resolution_clock::now();
+    for (auto ip = 0; ip < nppc * domain.size(); ++ip)
+    {
+        myGrid.addToCell(particles[ip].iCell, particles[ip]);
+    }
     for (auto const& box : boxes)
     {
         auto intersection = domain * box;
