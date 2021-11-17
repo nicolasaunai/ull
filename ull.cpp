@@ -120,7 +120,7 @@ public:
             bucket_idx++;
             curr = 0;
             add(t);
-            std::cout << "buckets" << buckets_.size() << " " << buckets_.capacity() << "\n";
+            // std::cout << "buckets" << buckets_.size() << " " << buckets_.capacity() << "\n";
         }
     }
 
@@ -415,7 +415,7 @@ void test()
     //
     std::cout << "---------------START TESTS ------------------------------\n";
     constexpr auto dim = 2u;
-    Box<dim> domain{{0, 0}, {9, 19}};
+    Box<dim> domain{{0, 0}, {199, 399}};
     std::size_t nppc = 4;
     auto particles   = make_particles_in(domain, nppc);
 
@@ -551,7 +551,7 @@ int main()
     Box<dim> domain{{0, 0}, {30, 40}};
     std::size_t nppc = 100;
 
-    auto constexpr bucket_size = 64u;
+    auto constexpr bucket_size = 100u;
 
     auto boxes = box_generator(domain, 5, 10, 10);
 
