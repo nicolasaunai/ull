@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <algorithm>
+#include <fstream>
 
 template<size_t dim>
 struct Particle
@@ -29,21 +30,27 @@ struct Particle
 class Timer
 {
 public:
-    Timer()
+    Timer(std::size_t& save, bool print = false)
         : tstart_{std::chrono::high_resolution_clock::now()}
+        , save_{save}
+        , print_{print}
     {
     }
 
     ~Timer()
     {
         tstop_ = std::chrono::high_resolution_clock::now();
-        auto duration
+        std::size_t duration
             = std::chrono::duration_cast<std::chrono::microseconds>(tstop_ - tstart_).count();
-        std::cout << duration << " us\n";
+        save_ = duration;
+        if (print_)
+            std::cout << duration << " us\n";
     }
 
 private:
     std::chrono::high_resolution_clock::time_point tstart_, tstop_;
+    std::size_t& save_;
+    bool print_;
 };
 
 
@@ -291,7 +298,6 @@ public:
             auto cc = cell(c);
             nbrTot += cc.total();
         }
-        std::cout << "select found " << nbrTot << "\n";
         std::vector<Particle<dim>> selection(nbrTot);
 
         std::size_t ipart = 0;
@@ -385,6 +391,7 @@ auto make_particles_in(Box<dim> box, std::size_t nppc)
 void test()
 {
     //
+    std::cout << "---------------START TESTS ------------------------------\n";
     constexpr auto dim = 2u;
     Box<dim> domain{{0, 0}, {9, 19}};
     std::size_t nppc = 4;
@@ -448,6 +455,8 @@ void test()
     std::cout << "nbr of particles expected : " << selection_box.size() * nppc << "\n";
     if (selected.size() != selection_box.size() * nppc)
         throw std::runtime_error("invalid number of found particles");
+
+    std::cout << "---------------END OF TESTS ------------------------------\n";
 }
 
 template<std::size_t dim>
@@ -522,62 +531,69 @@ int main()
     auto particles   = make_particles_in(domain, nppc);
 
     grid<dim, Particle<dim>, 200> myGrid(domain.shape());
-    myGrid.add(particles);
 
     auto boxes = box_generator(domain, 5, 10, 10);
 
-    for (auto const& box : boxes)
-    {
-        std::cout << "searching particles in [(" << box.lower[0] << "," << box.lower[1] << "),("
-                  << box.upper[0] << "," << box.upper[1] << ")]\n";
-        auto intersection = domain * box;
-        std::cout << "intersection is [(" << intersection.lower[0] << "," << intersection.lower[1]
-                  << "),(" << intersection.upper[0] << "," << intersection.upper[1] << ")]\n";
-        std::cout << "expecting " << intersection.size() * nppc << " particles\n";
-        auto found = myGrid.select(particles, intersection);
-        std::cout << "found " << found.size() << " particles\n";
-    }
 
-    myGrid.reset();
-    {
-        auto _ = Timer();
-        myGrid.add(particles);
-        for (auto const& box : boxes)
-        {
-            auto intersection = domain * box;
-            auto found        = myGrid.select(particles, intersection);
-        }
-        std::cout << "first method\n";
-    }
+    std::array<std::size_t, 100> nppcs;
+    std::vector<std::size_t> m1times(nppcs.size());
+    std::vector<std::size_t> m2times(nppcs.size());
+    std::generate(std::begin(nppcs), std::end(nppcs), []() {
+        static std::size_t nppc = 1;
+        return nppc++;
+    });
 
+
+    std::cout << "first method\n";
+    auto m1time = std::begin(m1times);
+    for (auto const& nppc : nppcs)
     {
-        auto _ = Timer();
-        std::vector<Particle<dim>> selected;
-        for (auto const& box : boxes)
+        std::cout << nppc << " particles per cell\n";
+        myGrid.reset();
         {
-            auto count = 0u;
-            for (auto const& p : particles)
+            auto _ = Timer(*(m1time));
+            myGrid.add(particles);
+            for (auto const& box : boxes)
             {
                 auto intersection = domain * box;
-                if (isInBox(intersection, p))
-                {
-                    count++;
-                }
+                auto found        = myGrid.select(particles, intersection);
             }
-            selected.resize(count);
-            auto ip = 0u;
-            for (auto const& p : particles)
+        }
+        m1time++;
+    }
+
+    std::cout << "second method\n";
+    auto m2time = std::begin(m2times);
+    for (auto const& nppc : nppcs)
+    {
+        std::cout << nppc << " particles per cell\n";
+        {
+            auto _ = Timer(*(m2time));
+            std::vector<Particle<dim>> selected;
+            for (auto const& box : boxes)
             {
-                auto intersection = domain * box;
-                if (isInBox(intersection, p))
+                for (auto const& p : particles)
                 {
-                    selected[ip++] = p;
+                    auto intersection = domain * box;
+                    if (isInBox(intersection, p))
+                    {
+                        selected.push_back(p);
+                    }
                 }
             }
         }
-        std::cout << "second method \n";
+        m2time++;
     }
 
+
+    std::cout << "saving results....\n";
+    std::ofstream output;
+    output.open("test.txt");
+    for (auto i = 0u; i < nppcs.size(); ++i)
+    {
+        output << nppcs[i] << " " << m1times[i] << " " << m2times[i] << "\n";
+    }
+    output.close();
 
 
     return 0;
