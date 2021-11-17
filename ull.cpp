@@ -243,6 +243,16 @@ public:
         ulls_[cell[1] + ny_ * cell[0]].add(obj);
     }
 
+
+    void add(std::vector<Particle<dim>> const& particles)
+    {
+        for (auto const& particle : particles)
+        {
+            addToCell(particle.iCell, particle);
+        }
+    }
+
+
     std::size_t total(std::size_t ix, std::size_t iy)
     {
         auto icell = iy + ix * ny_;
@@ -317,6 +327,9 @@ public:
             ull.empty();
         }
     }
+
+
+
 
 private:
     std::size_t nx_, ny_;
@@ -487,10 +500,7 @@ int main()
     auto particles   = make_particles_in(domain, nppc);
 
     grid<dim, Particle<dim>, 200> myGrid(domain.shape());
-    for (auto ip = 0; ip < nppc * domain.size(); ++ip)
-    {
-        myGrid.addToCell(particles[ip].iCell, particles[ip]);
-    }
+    myGrid.add(particles);
 
     auto boxes = box_generator(domain, 5, 10, 10);
 
@@ -508,12 +518,8 @@ int main()
 
     myGrid.reset();
     std::chrono::high_resolution_clock::time_point t1;
-
     t1 = std::chrono::high_resolution_clock::now();
-    for (auto ip = 0; ip < nppc * domain.size(); ++ip)
-    {
-        myGrid.addToCell(particles[ip].iCell, particles[ip]);
-    }
+    myGrid.add(particles);
     for (auto const& box : boxes)
     {
         auto intersection = domain * box;
@@ -522,7 +528,7 @@ int main()
     std::chrono::high_resolution_clock::time_point t2;
     t2            = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    std::cout << "first method : " << duration << "ms\n";
+    std::cout << "first method : " << duration << "us\n";
 
     t1 = std::chrono::high_resolution_clock::now();
     std::vector<Particle<dim>> selected;
@@ -550,7 +556,7 @@ int main()
     }
     t2       = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    std::cout << "second method : " << duration << "ms\n";
+    std::cout << "second method : " << duration << "us\n";
 
 
 
