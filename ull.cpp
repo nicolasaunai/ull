@@ -528,7 +528,6 @@ int main()
     constexpr auto dim = 2u;
     Box<dim> domain{{0, 0}, {199, 399}};
     std::size_t nppc = 100;
-    auto particles   = make_particles_in(domain, nppc);
 
     grid<dim, Particle<dim>, 200> myGrid(domain.shape());
 
@@ -549,6 +548,7 @@ int main()
     for (auto const& nppc : nppcs)
     {
         std::cout << nppc << " particles per cell\n";
+        auto particles = make_particles_in(domain, nppc);
         myGrid.reset();
         {
             auto _ = Timer(*(m1time));
@@ -567,6 +567,7 @@ int main()
     for (auto const& nppc : nppcs)
     {
         std::cout << nppc << " particles per cell\n";
+        auto particles = make_particles_in(domain, nppc);
         {
             auto _ = Timer(*(m2time));
             std::vector<Particle<dim>> selected;
